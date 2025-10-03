@@ -1,0 +1,13 @@
+# Install dependencies (Ubuntu/Debian)
+
+sudo apt-get install libssl-dev cmake build-essential
+
+# Build the project
+
+mkdir build
+cd build
+cmake ..
+make -j$(nproc)
+
+# Run 
+./intelligent_solver

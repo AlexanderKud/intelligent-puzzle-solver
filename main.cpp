@@ -18,7 +18,8 @@
 #include <openssl/bn.h>
 
 // 🧠 REAL-TIME INTELLIGENT FILTERING WITH CORNER DETECTION 🧠
-constexpr int N_THREADS = 16;
+// constexpr int N_THREADS = 16;
+int N_THREADS = std::thread::hardware_concurrency();
 constexpr int ANALYSIS_WINDOW = 10000;
 
 std::atomic<bool> FOUND(false);

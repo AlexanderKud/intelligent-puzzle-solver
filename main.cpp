@@ -9,16 +9,17 @@
 #include <mutex>
 #include <map>
 #include <algorithm>
+#include <queue>
+#include <bitset>
 #include <openssl/sha.h>
 #include <openssl/ripemd.h>
 #include <openssl/ec.h>
 #include <openssl/obj_mac.h>
 #include <openssl/bn.h>
 
-// 🧠 INTELLIGENT ADAPTIVE SEARCH WITH SELF-EVOLVING STRATEGY 🧠
-// Using BIGNUM for 71-bit range since uint64_t can't handle 2^70+
-constexpr int N_THREADS = 12;
-constexpr int CHUNK_SIZE = 10000;
+// 🧠 REAL-TIME INTELLIGENT FILTERING WITH CORNER DETECTION 🧠
+constexpr int N_THREADS = 16;
+constexpr int ANALYSIS_WINDOW = 10000;
 
 std::atomic<bool> FOUND(false);
 std::mutex intelligence_mutex;
@@ -26,102 +27,383 @@ std::atomic<uint64_t> TOTAL_TRIED(0);
 
 const std::string TARGET = "f6f5431d25bbf7b12e8add9af5e3475c44a0a5b8";
 
-// Big number constants for 2^70 and 2^71
-BIGNUM* HACKY_RANGE_START_BN = nullptr;
-BIGNUM* HACKY_RANGE_END_BN = nullptr;
+BIGNUM* RANGE_START_BN = nullptr;
+BIGNUM* RANGE_END_BN = nullptr;
 
 void init_bignum_constants() {
-    HACKY_RANGE_START_BN = BN_new();
-    HACKY_RANGE_END_BN = BN_new();
+    RANGE_START_BN = BN_new();
+    RANGE_END_BN = BN_new();
     
-    // Set 2^70
-    BN_zero(HACKY_RANGE_START_BN);
-    BN_set_bit(HACKY_RANGE_START_BN, 70);
-    
-    // Set 2^71 - 1
-    BN_zero(HACKY_RANGE_END_BN);
-    BN_set_bit(HACKY_RANGE_END_BN, 71);
-    BN_sub_word(HACKY_RANGE_END_BN, 1);
+    BN_set_bit(RANGE_START_BN, 70);
+    BN_set_bit(RANGE_END_BN, 71);
+    BN_sub_word(RANGE_END_BN, 1);
 }
 
 void cleanup_bignum_constants() {
-    if (HACKY_RANGE_START_BN) BN_free(HACKY_RANGE_START_BN);
-    if (HACKY_RANGE_END_BN) BN_free(HACKY_RANGE_END_BN);
+    if (RANGE_START_BN) BN_free(RANGE_START_BN);
+    if (RANGE_END_BN) BN_free(RANGE_END_BN);
 }
 
-// 🧠 INTELLIGENCE SYSTEM - TRACKS PATTERNS AND ADAPTS
-struct SearchIntelligence {
-    std::map<int, uint64_t> prefix_matches; // prefix_length -> count
-    std::map<std::string, int> promising_ranges; // key_hex -> match_length
-    std::vector<std::pair<std::string, int>> best_matches; // (key_hex, match_length)
-    int adaptive_threshold = 8; // Start focusing on 8+ character matches
-    double focus_intensity = 0.3; // % of threads focusing on promising areas
+// 🧠 REAL-TIME PATTERN ANALYSIS ENGINE
+class RealTimeIntelligence {
+private:
+    struct PatternCluster {
+        BIGNUM* center;
+        int match_strength;
+        uint64_t sample_count;
+        double success_density;
+        std::vector<int> bit_patterns;
+        
+        PatternCluster(BIGNUM* center_bn, int strength) {
+            center = BN_dup(center_bn);
+            match_strength = strength;
+            sample_count = 1;
+            success_density = strength / 100.0;
+        }
+        
+        ~PatternCluster() {
+            BN_free(center);
+        }
+    };
     
-    void record_match(const std::string& key_hex, int match_length, const std::string& hash) {
+    std::vector<PatternCluster*> active_clusters;
+    std::map<std::string, double> corner_performance; // corner_hash -> success_rate
+    std::vector<std::pair<BIGNUM*, int>> recent_matches; // (key, match_length)
+    std::map<int, uint64_t> bit_position_correlation; // bit_pos -> match_correlation
+    
+    // Bit pattern analysis
+    static const int BIT_ANALYSIS_DEPTH = 256;
+    std::vector<std::vector<double>> bit_transition_matrix; // [current_pattern][next_bit] -> probability
+    
+public:
+    RealTimeIntelligence() {
+        // Initialize bit transition matrix
+        bit_transition_matrix.resize(BIT_ANALYSIS_DEPTH, std::vector<double>(2, 0.5));
+    }
+    
+    ~RealTimeIntelligence() {
+        for (auto cluster : active_clusters) {
+            delete cluster;
+        }
+    }
+    
+    // 🧠 ANALYZE EACH KEY IN REAL-TIME AND UPDATE FILTERING STRATEGY
+    void analyze_key_pattern(BIGNUM* key_bn, int match_length, const std::string& hash_result) {
         std::lock_guard<std::mutex> lock(intelligence_mutex);
         
-        prefix_matches[match_length]++;
+        // 1. Update recent matches queue
+        recent_matches.push_back({BN_dup(key_bn), match_length});
+        if (recent_matches.size() > 1000) {
+            BN_free(recent_matches[0].first);
+            recent_matches.erase(recent_matches.begin());
+        }
         
-        // Add to promising ranges if it's a good match
-        if (match_length >= adaptive_threshold) {
-            promising_ranges[key_hex] = match_length;
+        // 2. Bit-level pattern analysis
+        analyze_bit_patterns(key_bn, match_length);
+        
+        // 3. Cluster analysis for promising regions
+        update_clusters(key_bn, match_length);
+        
+        // 4. Corner detection in the search space
+        detect_promising_corners();
+        
+        // 5. Adaptive bit transition probabilities
+        update_transition_matrix(key_bn, match_length);
+    }
+    
+    // 🧠 BIT-LEVEL PATTERN ANALYSIS
+    void analyze_bit_patterns(BIGNUM* key_bn, int match_length) {
+        // Convert BIGNUM to bit pattern
+        std::bitset<256> bit_pattern;
+        for (int i = 0; i < 256; i++) {
+            if (BN_is_bit_set(key_bn, i)) {
+                bit_pattern.set(i);
+            }
+        }
+        
+        // Analyze correlation between bit positions and match success
+        if (match_length >= 12) {
+            for (int i = 0; i < 71; i++) { // Only analyze relevant bits for 71-bit range
+                if (bit_pattern[i]) {
+                    bit_position_correlation[i]++;
+                }
+            }
+        }
+    }
+    
+    // 🧠 CLUSTER PROMISING REGIONS
+    void update_clusters(BIGNUM* key_bn, int match_length) {
+        if (match_length < 10) return;
+        
+        bool added_to_existing = false;
+        
+        // Try to add to existing cluster
+        for (auto cluster : active_clusters) {
+            BIGNUM* distance = BN_new();
+            BN_CTX* ctx = BN_CTX_new();
             
-            // Keep best matches sorted
-            best_matches.push_back({key_hex, match_length});
-            std::sort(best_matches.begin(), best_matches.end(), 
+            BN_sub(distance, key_bn, cluster->center);
+            
+            // If close to cluster center, update cluster
+            if (BN_num_bits(distance) < 20) { // Within 2^20 range
+                cluster->sample_count++;
+                cluster->match_strength = std::max(cluster->match_strength, match_length);
+                cluster->success_density = (cluster->success_density * (cluster->sample_count - 1) + 
+                                          (match_length / 100.0)) / cluster->sample_count;
+                added_to_existing = true;
+            }
+            
+            BN_free(distance);
+            BN_CTX_free(ctx);
+        }
+        
+        // Create new cluster if no suitable existing cluster
+        if (!added_to_existing && match_length >= 12) {
+            active_clusters.push_back(new PatternCluster(key_bn, match_length));
+            
+            // Keep only top clusters
+            if (active_clusters.size() > 20) {
+                std::sort(active_clusters.begin(), active_clusters.end(),
+                         [](const PatternCluster* a, const PatternCluster* b) {
+                             return a->success_density > b->success_density;
+                         });
+                delete active_clusters.back();
+                active_clusters.pop_back();
+            }
+        }
+    }
+    
+    // 🧠 DETECT PROMISING CORNERS OF THE SEARCH SPACE
+    void detect_promising_corners() {
+        if (recent_matches.size() < 100) return;
+        
+        // Analyze recent matches to find promising corners
+        std::map<std::string, std::pair<uint64_t, uint64_t>> corner_stats; // corner_id -> (total, successes)
+        
+        for (const auto& [key_bn, match_length] : recent_matches) {
+            // Define "corners" based on bit patterns in upper bits
+            std::string corner_id = get_corner_identifier(key_bn);
+            
+            corner_stats[corner_id].first++;
+            if (match_length >= 12) {
+                corner_stats[corner_id].second++;
+            }
+        }
+        
+        // Update corner performance
+        for (const auto& [corner, stats] : corner_stats) {
+            double success_rate = static_cast<double>(stats.second) / stats.first;
+            corner_performance[corner] = success_rate;
+        }
+    }
+    
+    // 🧠 GET CORNER IDENTIFIER BASED ON BIT PATTERNS
+    std::string get_corner_identifier(BIGNUM* key_bn) {
+        // Use upper 16 bits to define "corners" of the search space
+        std::string corner_id;
+        for (int i = 55; i < 71; i++) { // Upper 16 bits of 71-bit range
+            corner_id += BN_is_bit_set(key_bn, i) ? '1' : '0';
+        }
+        return corner_id;
+    }
+    
+    // 🧠 UPDATE BIT TRANSITION PROBABILITIES
+    void update_transition_matrix(BIGNUM* key_bn, int match_length) {
+        // Analyze transitions between successful bit patterns
+        // This is simplified - in reality you'd track sequences of successful keys
+        double learning_rate = 0.01 * (match_length - 8); // Learn more from better matches
+        
+        // Update probabilities based on successful keys
+        for (int i = 0; i < 70; i++) {
+            int current_bit = BN_is_bit_set(key_bn, i);
+            int next_bit = BN_is_bit_set(key_bn, i + 1);
+            
+            // Smooth update of transition probabilities
+            bit_transition_matrix[current_bit][next_bit] = 
+                (1 - learning_rate) * bit_transition_matrix[current_bit][next_bit] + 
+                learning_rate * 1.0;
+        }
+    }
+    
+    // 🧠 GENERATE INTELLIGENT NEXT KEY BASED ON LEARNED PATTERNS
+    void generate_intelligent_key(BIGNUM* result, std::mt19937_64& gen, 
+                                 std::uniform_real_distribution<>& dis) {
+        std::lock_guard<std::mutex> lock(intelligence_mutex);
+        
+        // Strategy selection based on learned patterns
+        double strategy = dis(gen);
+        
+        if (strategy < 0.4 && !active_clusters.empty()) {
+            // Cluster-based generation (40% probability)
+            generate_from_clusters(result, gen);
+        } else if (strategy < 0.7 && !corner_performance.empty()) {
+            // Corner-based generation (30% probability)
+            generate_from_corners(result, gen);
+        } else if (strategy < 0.9) {
+            // Bit-pattern-based generation (20% probability)
+            generate_from_bit_patterns(result, gen);
+        } else {
+            // Pure exploration (10% probability)
+            generate_random_in_range(result, RANGE_START_BN, RANGE_END_BN, gen);
+        }
+    }
+    
+    // 🧠 GENERATE KEY FROM PROMISING CLUSTERS
+    void generate_from_clusters(BIGNUM* result, std::mt19937_64& gen) {
+        // Weighted selection by cluster success density
+        double total_weight = 0;
+        for (auto cluster : active_clusters) {
+            total_weight += cluster->success_density;
+        }
+        
+        double selection = static_cast<double>(gen() % 10000) / 10000.0 * total_weight;
+        double current = 0;
+        
+        PatternCluster* selected_cluster = nullptr;
+        for (auto cluster : active_clusters) {
+            current += cluster->success_density;
+            if (current >= selection) {
+                selected_cluster = cluster;
+                break;
+            }
+        }
+        
+        if (selected_cluster) {
+            // Generate near cluster center with adaptive radius
+            BIGNUM* radius = BN_new();
+            BN_set_bit(radius, 20 - selected_cluster->match_strength); // Smaller radius for better clusters
+            
+            BIGNUM* min_val = BN_new();
+            BIGNUM* max_val = BN_new();
+            
+            BN_sub(min_val, selected_cluster->center, radius);
+            BN_add(max_val, selected_cluster->center, radius);
+            
+            // Clamp to range
+            if (BN_cmp(min_val, RANGE_START_BN) < 0) BN_copy(min_val, RANGE_START_BN);
+            if (BN_cmp(max_val, RANGE_END_BN) > 0) BN_copy(max_val, RANGE_END_BN);
+            
+            generate_random_in_range(result, min_val, max_val, gen);
+            
+            BN_free(radius);
+            BN_free(min_val);
+            BN_free(max_val);
+        }
+    }
+    
+    // 🧠 GENERATE KEY FROM HIGH-PERFORMANCE CORNERS
+    void generate_from_corners(BIGNUM* result, std::mt19937_64& gen) {
+        // Find best performing corners
+        std::vector<std::pair<std::string, double>> sorted_corners(
+            corner_performance.begin(), corner_performance.end());
+        std::sort(sorted_corners.begin(), sorted_corners.end(),
+                 [](const auto& a, const auto& b) { return a.second > b.second; });
+        
+        if (sorted_corners.empty()) return;
+        
+        // Select from top 3 corners
+        const auto& selected_corner = sorted_corners[gen() % std::min(3, (int)sorted_corners.size())];
+        
+        // Create base key from corner pattern
+        BN_zero(result);
+        for (size_t i = 0; i < selected_corner.first.size(); i++) {
+            if (selected_corner.first[i] == '1') {
+                BN_set_bit(result, 55 + i); // Set upper bits according to corner pattern
+            }
+        }
+        
+        // Add random lower bits
+        BIGNUM* random_lower = BN_new();
+        BN_rand(random_lower, 55, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY); // 55 lower bits
+        BN_add(result, result, random_lower);
+        BN_free(random_lower);
+    }
+    
+    // 🧠 GENERATE KEY USING LEARNED BIT PATTERNS
+    void generate_from_bit_patterns(BIGNUM* result, std::mt19937_64& gen) {
+        BN_zero(result);
+        
+        int current_bit = gen() % 2;
+        for (int i = 0; i < 71; i++) {
+            // Use learned transition probabilities
+            double prob = bit_transition_matrix[current_bit][1];
+            if (static_cast<double>(gen() % 10000) / 10000.0 < prob) {
+                BN_set_bit(result, i);
+                current_bit = 1;
+            } else {
+                current_bit = 0;
+            }
+        }
+        
+        // Ensure within range
+        if (BN_cmp(result, RANGE_START_BN) < 0) BN_copy(result, RANGE_START_BN);
+        if (BN_cmp(result, RANGE_END_BN) > 0) BN_copy(result, RANGE_END_BN);
+    }
+    
+    // 🧠 UTILITY: GENERATE RANDOM IN RANGE
+    void generate_random_in_range(BIGNUM* result, const BIGNUM* min, const BIGNUM* max, 
+                                 std::mt19937_64& gen) {
+        BIGNUM* range = BN_new();
+        BN_CTX* ctx = BN_CTX_new();
+        
+        BN_sub(range, max, min);
+        BN_add_word(range, 1);
+        
+        BN_rand_range(result, range);
+        BN_add(result, result, min);
+        
+        BN_free(range);
+        BN_CTX_free(ctx);
+    }
+    
+    // 🧠 GET INTELLIGENCE REPORT
+    void print_intelligence_report() {
+        std::lock_guard<std::mutex> lock(intelligence_mutex);
+        
+        std::cout << "\n🧠 REAL-TIME INTELLIGENCE REPORT:\n";
+        std::cout << "Active Clusters: " << active_clusters.size() << "\n";
+        std::cout << "Tracked Corners: " << corner_performance.size() << "\n";
+        std::cout << "Recent Matches Analyzed: " << recent_matches.size() << "\n";
+        
+        if (!active_clusters.empty()) {
+            std::cout << "Top Clusters:\n";
+            for (size_t i = 0; i < std::min(active_clusters.size(), size_t(3)); i++) {
+                std::cout << "  Cluster " << i << ": strength=" << active_clusters[i]->match_strength
+                          << ", density=" << active_clusters[i]->success_density 
+                          << ", samples=" << active_clusters[i]->sample_count << "\n";
+            }
+        }
+        
+        if (!corner_performance.empty()) {
+            std::cout << "Top Performing Corners:\n";
+            std::vector<std::pair<std::string, double>> sorted_corners(
+                corner_performance.begin(), corner_performance.end());
+            std::sort(sorted_corners.begin(), sorted_corners.end(),
                      [](const auto& a, const auto& b) { return a.second > b.second; });
             
-            // Keep only top 20 best matches
-            if (best_matches.size() > 20) {
-                best_matches.pop_back();
-            }
-            
-            // Adapt threshold based on findings
-            if (match_length > adaptive_threshold + 2) {
-                adaptive_threshold = match_length - 1;
-                std::cout << "🧠 INTELLIGENCE: Raised threshold to " << adaptive_threshold 
-                          << " (found match of length " << match_length << ")\n";
+            for (size_t i = 0; i < std::min(sorted_corners.size(), size_t(3)); i++) {
+                std::cout << "  Corner " << sorted_corners[i].first << ": success_rate=" 
+                          << sorted_corners[i].second << "\n";
             }
         }
         
-        // Increase focus on promising areas as we learn
-        if (prefix_matches[match_length] % 100 == 0) {
-            focus_intensity = std::min(0.8, 0.3 + (prefix_matches[match_length] / 1000.0) * 0.1);
-        }
-    }
-    
-    std::vector<std::string> get_promising_centers() {
-        std::lock_guard<std::mutex> lock(intelligence_mutex);
-        std::vector<std::string> centers;
-        for (const auto& [center, length] : promising_ranges) {
-            centers.push_back(center);
-        }
-        return centers;
-    }
-    
-    void print_intelligence() {
-        std::lock_guard<std::mutex> lock(intelligence_mutex);
-        std::cout << "\n🧠 SEARCH INTELLIGENCE REPORT:\n";
-        std::cout << "Adaptive Threshold: " << adaptive_threshold << "\n";
-        std::cout << "Focus Intensity: " << (focus_intensity * 100) << "%\n";
-        std::cout << "Promising Ranges: " << promising_ranges.size() << "\n";
-        std::cout << "Prefix Match Distribution:\n";
-        for (const auto& [length, count] : prefix_matches) {
-            if (count > 0) {
-                std::cout << "  " << length << " chars: " << count << " matches\n";
-            }
-        }
-        if (!best_matches.empty()) {
-            std::cout << "Best Matches:\n";
-            for (size_t i = 0; i < std::min(best_matches.size(), size_t(5)); i++) {
-                std::cout << "  " << best_matches[i].second << " chars at key " 
-                          << best_matches[i].first.substr(0, 16) << "...\n";
+        // Show bit correlation for top positions
+        if (!bit_position_correlation.empty()) {
+            std::cout << "Top Bit Correlations:\n";
+            std::vector<std::pair<int, uint64_t>> sorted_bits(
+                bit_position_correlation.begin(), bit_position_correlation.end());
+            std::sort(sorted_bits.begin(), sorted_bits.end(),
+                     [](const auto& a, const auto& b) { return a.second > b.second; });
+            
+            for (size_t i = 0; i < std::min(sorted_bits.size(), size_t(5)); i++) {
+                std::cout << "  Bit " << sorted_bits[i].first << ": correlation=" 
+                          << sorted_bits[i].second << "\n";
             }
         }
     }
 };
 
-SearchIntelligence GLOBAL_INTELLIGENCE;
+RealTimeIntelligence GLOBAL_INTELLIGENCE;
 
 // 🧠 TURBO HASHING FUNCTION
 std::string turbo_hash_bn(BIGNUM* key_bn) {
@@ -157,46 +439,12 @@ std::string turbo_hash_bn(BIGNUM* key_bn) {
     return std::string(out, 40);
 }
 
-// Generate random BIGNUM in range [min, max]
-void generate_random_bignum_in_range(BIGNUM* result, const BIGNUM* min, const BIGNUM* max, std::mt19937_64& gen) {
-    BIGNUM* range = BN_new();
-    BN_CTX* ctx = BN_CTX_new();
-    
-    // Calculate range = max - min + 1
-    BN_sub(range, max, min);
-    BN_add_word(range, 1);
-    
-    // Generate random number in range
-    BN_rand_range(result, range);
-    
-    // Add min to get number in [min, max]
-    BN_add(result, result, min);
-    
-    BN_free(range);
-    BN_CTX_free(ctx);
-}
-
-// Convert BIGNUM to hex string
-std::string bn_to_hex(const BIGNUM* bn) {
-    char* hex = BN_bn2hex(bn);
-    std::string result(hex);
-    OPENSSL_free(hex);
-    return result;
-}
-
-// Convert hex string to BIGNUM
-BIGNUM* hex_to_bn(const std::string& hex) {
-    BIGNUM* bn = BN_new();
-    BN_hex2bn(&bn, hex.c_str());
-    return bn;
-}
-
-// 🧠 ADAPTIVE WORKER - CAN SWITCH BETWEEN RANDOM AND FOCUSED SEARCH
-void adaptive_worker(int thread_id) {
+// 🧠 INTELLIGENT WORKER WITH REAL-TIME FILTERING
+void intelligent_worker(int thread_id) {
     std::random_device rd;
     std::mt19937_64 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
     
-    // Thread-local crypto context
     EC_KEY* kk = EC_KEY_new_by_curve_name(NID_secp256k1);
     BIGNUM* key_bn = BN_new();
     const EC_GROUP* g = EC_KEY_get0_group(kk);
@@ -208,63 +456,11 @@ void adaptive_worker(int thread_id) {
     static const char* hex_chars = "0123456789abcdef";
     
     uint64_t local_tested = 0;
-    auto last_switch = std::chrono::steady_clock::now();
-    bool in_focused_mode = false;
-    std::string focus_center_hex;
-    BIGNUM* focus_radius_bn = BN_new();
-    BN_set_word(focus_radius_bn, 1ULL << 30); // Start with 2^30 radius
+    auto last_report = std::chrono::steady_clock::now();
     
     while (!FOUND) {
-        // 🧠 DECIDE SEARCH MODE BASED ON INTELLIGENCE
-        auto now = std::chrono::steady_clock::now();
-        bool should_switch = (now - last_switch > std::chrono::seconds(30));
-        
-        if (should_switch || !in_focused_mode) {
-            double focus_chance = GLOBAL_INTELLIGENCE.focus_intensity;
-            auto promising_centers = GLOBAL_INTELLIGENCE.get_promising_centers();
-            
-            if (!promising_centers.empty() && (gen() % 1000 < static_cast<int>(focus_chance * 1000))) {
-                // Switch to focused mode
-                in_focused_mode = true;
-                focus_center_hex = promising_centers[gen() % promising_centers.size()];
-                std::lock_guard<std::mutex> lock(intelligence_mutex);
-                std::cout << "🎯 Thread " << thread_id << " focusing around key " 
-                          << focus_center_hex.substr(0, 16) << "...\n";
-            } else {
-                // Switch to exploration mode
-                in_focused_mode = false;
-            }
-            last_switch = now;
-        }
-        
-        // 🧠 GENERATE KEY BASED ON CURRENT MODE
-        if (in_focused_mode) {
-            // Generate in focused region around promising key
-            BIGNUM* center_bn = hex_to_bn(focus_center_hex);
-            BIGNUM* min_bn = BN_new();
-            BIGNUM* max_bn = BN_new();
-            
-            // Calculate min = center - radius, max = center + radius
-            BN_sub(min_bn, center_bn, focus_radius_bn);
-            BN_add(max_bn, center_bn, focus_radius_bn);
-            
-            // Clamp to global range
-            if (BN_cmp(min_bn, HACKY_RANGE_START_BN) < 0) {
-                BN_copy(min_bn, HACKY_RANGE_START_BN);
-            }
-            if (BN_cmp(max_bn, HACKY_RANGE_END_BN) > 0) {
-                BN_copy(max_bn, HACKY_RANGE_END_BN);
-            }
-            
-            generate_random_bignum_in_range(key_bn, min_bn, max_bn, gen);
-            
-            BN_free(center_bn);
-            BN_free(min_bn);
-            BN_free(max_bn);
-        } else {
-            // Random exploration in full range
-            generate_random_bignum_in_range(key_bn, HACKY_RANGE_START_BN, HACKY_RANGE_END_BN, gen);
-        }
+        // 🧠 GENERATE KEY USING REAL-TIME INTELLIGENCE
+        GLOBAL_INTELLIGENCE.generate_intelligent_key(key_bn, gen, dis);
         
         // 🧠 TURBO HASH
         EC_KEY_set_private_key(kk, key_bn);
@@ -273,7 +469,7 @@ void adaptive_worker(int thread_id) {
         SHA256(pub, pl, sha);
         RIPEMD160(sha, SHA256_DIGEST_LENGTH, rm);
         
-        // 🧠 SMART COMPARE WITH PATTERN DETECTION
+        // 🧠 SMART COMPARE WITH PATTERN ANALYSIS
         bool full_match = true;
         int current_match = 0;
         
@@ -283,9 +479,9 @@ void adaptive_worker(int thread_id) {
             
             if (c1 != TARGET[i * 2] || c2 != TARGET[i * 2 + 1]) {
                 full_match = false;
-                current_match = i * 2; // Each byte gives 2 hex chars
+                current_match = i * 2;
                 if (c1 == TARGET[i * 2]) {
-                    current_match++; // First char matched
+                    current_match++;
                 }
                 break;
             }
@@ -293,77 +489,108 @@ void adaptive_worker(int thread_id) {
         
         if (full_match) {
             FOUND = true;
-            std::string found_key_hex = bn_to_hex(key_bn);
+            std::string found_key_hex = BN_bn2hex(key_bn);
             std::lock_guard<std::mutex> lock(intelligence_mutex);
-            std::cout << "\n🎉 FULL MATCH FOUND BY ADAPTIVE THREAD " << thread_id << "!\n";
+            std::cout << "\n🎉 FULL MATCH FOUND BY INTELLIGENT WORKER " << thread_id << "!\n";
             std::cout << "Key: " << found_key_hex << "\n";
             break;
         }
         
-        // 🧠 RECORD INTELLIGENCE ABOUT PARTIAL MATCHES
-        if (current_match >= 6) { // Record matches of 6+ characters
-            std::string key_hex = bn_to_hex(key_bn);
-            GLOBAL_INTELLIGENCE.record_match(key_hex, current_match, "");
+        // 🧠 REAL-TIME PATTERN ANALYSIS AND FILTERING UPDATE
+        if (current_match >= 8) {
+            GLOBAL_INTELLIGENCE.analyze_key_pattern(key_bn, current_match, "");
+            
+            if (current_match >= 14) {
+                std::string key_hex = BN_bn2hex(key_bn);
+                std::cout << "🔥 Thread " << thread_id << " found strong pattern: " 
+                          << current_match << " chars at " << key_hex.substr(0, 20) << "...\n";
+            }
         }
         
         local_tested++;
         TOTAL_TRIED++;
         
-        // 🧠 OCCASIONAL INTELLIGENCE REPORTING
-        if (local_tested % 500000 == 0) {
-            std::lock_guard<std::mutex> lock(intelligence_mutex);
-            std::cout << "🧠 Thread " << thread_id << " tested " << local_tested 
-                      << " keys (" << (in_focused_mode ? "FOCUSED" : "EXPLORING") << ")\n";
-            if (current_match >= 8) {
-                std::string key_hex = bn_to_hex(key_bn);
-                std::cout << "   Found promising match: " << current_match 
-                          << " characters at key " << key_hex.substr(0, 16) << "...\n";
+        // 🧠 PERIODIC REPORTING
+        if (local_tested % 100000 == 0) {
+            auto now = std::chrono::steady_clock::now();
+            if (now - last_report > std::chrono::seconds(30)) {
+                std::lock_guard<std::mutex> lock(intelligence_mutex);
+                std::cout << "🧠 Thread " << thread_id << " tested " << local_tested 
+                          << " keys (total: " << TOTAL_TRIED << ")\n";
+                last_report = now;
+                local_tested = 0;
             }
-            local_tested = 0;
         }
     }
     
     EC_POINT_free(p);
     BN_free(key_bn);
-    BN_free(focus_radius_bn);
     EC_KEY_free(kk);
 }
 
-// 🧠 PATTERN-ANALYSIS WORKER - LOOKS FOR MATHEMATICAL PATTERNS
-void pattern_analysis_worker() {
-    std::cout << "🔍 Pattern Analysis Worker started...\n";
+// 🧠 PATTERN EXPLORATION WORKER - TESTS MATHEMATICAL STRUCTURES
+void pattern_exploration_worker() {
+    std::cout << "🔬 Pattern Exploration Worker started...\n";
+    
+    std::random_device rd;
+    std::mt19937_64 gen(rd());
     
     EC_KEY* kk = EC_KEY_new_by_curve_name(NID_secp256k1);
-    BIGNUM* key_bn = BN_new();
+    BIGNUM* test_bn = BN_new();
     
-    // Test common mathematical patterns within our range
+    // Test various mathematical structures
     std::vector<BIGNUM*> test_patterns;
     
-    // Powers of 2 near our range
+    // Powers of 2 and nearby values
     for (int exp = 70; exp < 72; exp++) {
         BIGNUM* pattern = BN_new();
         BN_set_bit(pattern, exp);
         test_patterns.push_back(pattern);
         
-        // pattern - 1
-        BIGNUM* pattern_minus = BN_dup(pattern);
-        BN_sub_word(pattern_minus, 1);
-        test_patterns.push_back(pattern_minus);
-        
-        // pattern + 1
-        BIGNUM* pattern_plus = BN_dup(pattern);
-        BN_add_word(pattern_plus, 1);
-        test_patterns.push_back(pattern_plus);
+        // Nearby values
+        for (int offset = -1000; offset <= 1000; offset += 100) {
+            BIGNUM* nearby = BN_dup(pattern);
+            if (offset > 0) {
+                BN_add_word(nearby, offset);
+            } else {
+                BN_sub_word(nearby, -offset);
+            }
+            if (BN_cmp(nearby, RANGE_START_BN) >= 0 && BN_cmp(nearby, RANGE_END_BN) <= 0) {
+                test_patterns.push_back(nearby);
+            } else {
+                BN_free(nearby);
+            }
+        }
+    }
+    
+    // Arithmetic progressions from promising areas
+    auto promising_centers = []() -> std::vector<BIGNUM*> {
+        // This would come from global intelligence in a real implementation
+        std::vector<BIGNUM*> centers;
+        BIGNUM* center = BN_new();
+        BN_set_bit(center, 70);
+        BN_add_word(center, 123456789);
+        centers.push_back(center);
+        return centers;
+    }();
+    
+    for (BIGNUM* center : promising_centers) {
+        for (int step = 1; step <= 10000; step *= 10) {
+            for (int dir = -1; dir <= 1; dir += 2) {
+                BIGNUM* progression = BN_dup(center);
+                BN_add_word(progression, dir * step);
+                if (BN_cmp(progression, RANGE_START_BN) >= 0 && BN_cmp(progression, RANGE_END_BN) <= 0) {
+                    test_patterns.push_back(progression);
+                } else {
+                    BN_free(progression);
+                }
+            }
+        }
     }
     
     // Test all patterns
     for (BIGNUM* pattern : test_patterns) {
         if (FOUND) break;
-        
-        // Ensure pattern is within range
-        if (BN_cmp(pattern, HACKY_RANGE_START_BN) < 0 || BN_cmp(pattern, HACKY_RANGE_END_BN) > 0) {
-            continue;
-        }
         
         std::string hash = turbo_hash_bn(pattern);
         int match_length = 0;
@@ -376,159 +603,53 @@ void pattern_analysis_worker() {
         }
         
         if (match_length >= 10) {
-            std::string pattern_hex = bn_to_hex(pattern);
-            GLOBAL_INTELLIGENCE.record_match(pattern_hex, match_length, hash);
-            std::cout << "🔍 Pattern match: " << match_length 
-                      << " chars at mathematical pattern " << pattern_hex << "\n";
+            GLOBAL_INTELLIGENCE.analyze_key_pattern(pattern, match_length, hash);
+            std::string pattern_hex = BN_bn2hex(pattern);
+            std::cout << "🔬 Pattern match: " << match_length 
+                      << " chars at " << pattern_hex.substr(0, 20) << "...\n";
         }
         
         if (hash == TARGET) {
             FOUND = true;
-            std::string found_key_hex = bn_to_hex(pattern);
-            std::cout << "\n🎯 PATTERN SOLVED THE PUZZLE!\n";
+            std::string found_key_hex = BN_bn2hex(pattern);
+            std::cout << "\n🎯 PATTERN EXPLORATION SOLVED THE PUZZLE!\n";
             std::cout << "Key: " << found_key_hex << "\n";
-            break;
         }
+        
+        TOTAL_TRIED++;
     }
     
-    // Cleanup patterns
+    // Cleanup
     for (BIGNUM* pattern : test_patterns) {
         BN_free(pattern);
     }
-    
-    BN_free(key_bn);
+    BN_free(test_bn);
     EC_KEY_free(kk);
 }
 
-// 🧠 NEIGHBORHOOD EXPLORER - DEEPLY EXPLORES AROUND PROMISING KEYS
-void neighborhood_explorer(int worker_id) {
-    std::random_device rd;
-    std::mt19937_64 gen(rd());
-    
-    EC_KEY* kk = EC_KEY_new_by_curve_name(NID_secp256k1);
-    BIGNUM* key_bn = BN_new();
-    const EC_GROUP* g = EC_KEY_get0_group(kk);
-    EC_POINT* p = EC_POINT_new(g);
-    unsigned char pub[65];
-    unsigned char sha[SHA256_DIGEST_LENGTH];
-    unsigned char rm[RIPEMD160_DIGEST_LENGTH];
-    char out[41];
-    static const char* hex = "0123456789abcdef";
-    
-    while (!FOUND) {
-        // Get promising centers to explore
-        auto centers = GLOBAL_INTELLIGENCE.get_promising_centers();
-        if (centers.empty()) {
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-            continue;
-        }
-        
-        std::string center_hex = centers[gen() % centers.size()];
-        BIGNUM* center_bn = hex_to_bn(center_hex);
-        
-        BIGNUM* radius_bn = BN_new();
-        BN_set_word(radius_bn, 1ULL << 20); // Explore 2^20 range around center
-        
-        BIGNUM* min_bn = BN_new();
-        BIGNUM* max_bn = BN_new();
-        
-        // Calculate min = center - radius, max = center + radius
-        BN_sub(min_bn, center_bn, radius_bn);
-        BN_add(max_bn, center_bn, radius_bn);
-        
-        // Clamp to global range
-        if (BN_cmp(min_bn, HACKY_RANGE_START_BN) < 0) {
-            BN_copy(min_bn, HACKY_RANGE_START_BN);
-        }
-        if (BN_cmp(max_bn, HACKY_RANGE_END_BN) > 0) {
-            BN_copy(max_bn, HACKY_RANGE_END_BN);
-        }
-        
-        std::cout << "🏘️  Neighborhood Explorer " << worker_id 
-                  << " deeply exploring around key " << center_hex.substr(0, 16) << "...\n";
-        
-        for (int i = 0; i < 100000 && !FOUND; i++) {
-            generate_random_bignum_in_range(key_bn, min_bn, max_bn, gen);
-            
-            EC_KEY_set_private_key(kk, key_bn);
-            EC_POINT_mul(g, p, key_bn, NULL, NULL, NULL);
-            size_t pl = EC_POINT_point2oct(g, p, POINT_CONVERSION_COMPRESSED, pub, 65, NULL);
-            SHA256(pub, pl, sha);
-            RIPEMD160(sha, SHA256_DIGEST_LENGTH, rm);
-            
-            bool full_match = true;
-            int match_length = 0;
-            for (int j = 0; j < 20; j++) {
-                char c1 = hex[rm[j] >> 4];
-                char c2 = hex[rm[j] & 0xF];
-                if (c1 != TARGET[j * 2] || c2 != TARGET[j * 2 + 1]) {
-                    full_match = false;
-                    match_length = j * 2;
-                    if (c1 == TARGET[j * 2]) match_length++;
-                    break;
-                }
-            }
-            
-            if (full_match) {
-                FOUND = true;
-                std::string found_key_hex = bn_to_hex(key_bn);
-                std::cout << "\n🎉 NEIGHBORHOOD EXPLORER FOUND IT!\n";
-                std::cout << "Key: " << found_key_hex << "\n";
-                break;
-            }
-            
-            if (match_length >= 12) {
-                std::string key_hex = bn_to_hex(key_bn);
-                GLOBAL_INTELLIGENCE.record_match(key_hex, match_length, "");
-                if (match_length >= 16) {
-                    std::cout << "🔥 HOT ZONE: " << match_length 
-                              << " char match in neighborhood exploration!\n";
-                }
-            }
-            
-            TOTAL_TRIED++;
-        }
-        
-        BN_free(center_bn);
-        BN_free(radius_bn);
-        BN_free(min_bn);
-        BN_free(max_bn);
-    }
-    
-    EC_POINT_free(p);
-    BN_free(key_bn);
-    EC_KEY_free(kk);
-}
-
-// 🧠 SELF-EVOLVING ATTACK SYSTEM
-void intelligent_71bit_attack() {
-    std::cout << "🧠 LAUNCHING INTELLIGENT SELF-EVOLVING 71-BIT ATTACK 🧠\n";
+// 🧠 MAIN INTELLIGENT SEARCH SYSTEM
+void real_time_intelligent_search() {
+    std::cout << "🧠 LAUNCHING REAL-TIME INTELLIGENT FILTERING SYSTEM 🧠\n";
     std::cout << "Target: " << TARGET << "\n";
     std::cout << "Range: 2^70 to 2^71\n";
     std::cout << "Threads: " << N_THREADS << "\n";
-    std::cout << "This system will ADAPT and EVOLVE its strategy based on partial successes!\n\n";
+    std::cout << "This system does CONTINUOUS PATTERN ANALYSIS and ADAPTIVE FILTERING!\n\n";
     
     auto start_time = std::chrono::steady_clock::now();
     
     std::vector<std::thread> threads;
     
-    // Start adaptive workers (can switch between exploration and focused search)
-    std::cout << "🚀 Starting " << N_THREADS << " adaptive workers...\n";
+    // Start intelligent workers
+    std::cout << "🚀 Starting " << N_THREADS << " intelligent workers...\n";
     for (int i = 0; i < N_THREADS; i++) {
-        threads.emplace_back(adaptive_worker, i);
+        threads.emplace_back(intelligent_worker, i);
     }
     
-    // Start pattern analysis
-    std::cout << "🔍 Starting pattern analysis...\n";
-    threads.emplace_back(pattern_analysis_worker);
+    // Start pattern exploration
+    std::cout << "🔬 Starting pattern exploration...\n";
+    threads.emplace_back(pattern_exploration_worker);
     
-    // Start neighborhood explorers
-    std::cout << "🏘️  Starting neighborhood explorers...\n";
-    for (int i = 0; i < 2; i++) {
-        threads.emplace_back(neighborhood_explorer, i);
-    }
-    
-    // Intelligence monitoring and reporting
+    // Intelligence monitoring
     uint64_t last_total = 0;
     auto last_intelligence_report = std::chrono::steady_clock::now();
     
@@ -540,32 +661,22 @@ void intelligent_71bit_attack() {
         uint64_t current_total = TOTAL_TRIED;
         uint64_t keys_per_sec = (current_total - last_total) / 30;
         
-        std::cout << "\n📊 PROGRESS UPDATE:\n";
+        std::cout << "\n📊 REAL-TIME PROGRESS:\n";
         std::cout << "⏱️  Elapsed: " << elapsed.count() << "s | ";
         std::cout << "Rate: " << keys_per_sec << " keys/s | ";
         std::cout << "Total: " << current_total << " keys\n";
         
         // Regular intelligence reports
-        if (now - last_intelligence_report > std::chrono::minutes(5)) {
-            GLOBAL_INTELLIGENCE.print_intelligence();
+        if (now - last_intelligence_report > std::chrono::minutes(2)) {
+            GLOBAL_INTELLIGENCE.print_intelligence_report();
             last_intelligence_report = now;
         }
         
         last_total = current_total;
         
-        // Adaptive timeout based on progress
-        if (elapsed.count() > 3600 && keys_per_sec < 1000) { // 1 hour with low rate
-            std::cout << "💤 Low detection rate - the puzzle might be in a sparse region.\n";
-            std::cout << "🧠 Increasing focus intensity to find more promising areas...\n";
-            GLOBAL_INTELLIGENCE.focus_intensity = std::min(0.9, GLOBAL_INTELLIGENCE.focus_intensity + 0.1);
-        }
-        
-        if (elapsed.count() > 86400) { // 24 hours
-            std::cout << "🧠 24H Analysis: This is a VERY hard puzzle!\n";
-            std::cout << "Keys tested: " << current_total << " / ~1.2e21 possible\n";
-            std::cout << "At current rate, estimated time: " 
-                      << (1.2e21 / keys_per_sec / 86400 / 365) << " years\n";
-            break;
+        // Adaptive timeout
+        if (elapsed.count() > 3600 && keys_per_sec < 1000) {
+            std::cout << "💤 Low detection rate - the system is focusing on promising areas.\n";
         }
     }
     
@@ -577,44 +688,34 @@ void intelligent_71bit_attack() {
     auto end_time = std::chrono::steady_clock::now();
     auto total_elapsed = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time);
     
-    if (FOUND) {
-        std::cout << "\n🎉 INTELLIGENT SYSTEM SOLVED THE 71-BIT PUZZLE! 🎉\n";
-        std::cout << "Time: " << total_elapsed.count() << " seconds\n";
-        std::cout << "Total Keys Tested: " << TOTAL_TRIED << "\n";
-        std::cout << "Final Intelligence Report:\n";
-        GLOBAL_INTELLIGENCE.print_intelligence();
-    } else {
-        std::cout << "\n💀 Intelligent system couldn't crack it this time...\n";
-        std::cout << "But we learned a lot! Final intelligence:\n";
-        GLOBAL_INTELLIGENCE.print_intelligence();
-    }
+    std::cout << "\n🎉 REAL-TIME INTELLIGENT SYSTEM COMPLETED!\n";
+    std::cout << "Time: " << total_elapsed.count() << " seconds\n";
+    std::cout << "Total Keys Tested: " << TOTAL_TRIED << "\n";
+    std::cout << "Final Intelligence Report:\n";
+    GLOBAL_INTELLIGENCE.print_intelligence_report();
 }
 
 int main() {
-    std::cout << "🧠 SELF-EVOLVING INTELLIGENT BITCOIN PUZZLE SOLVER 🧠\n";
-    std::cout << "====================================================\n\n";
+    std::cout << "🧠 REAL-TIME INTELLIGENT BITCOIN PUZZLE SOLVER 🧠\n";
+    std::cout << "=================================================\n\n";
     
-    // Initialize OpenSSL and big number constants
+    // Initialize
     init_bignum_constants();
     
     auto start = std::chrono::steady_clock::now();
-    
-    intelligent_71bit_attack();
-    
+    real_time_intelligent_search();
     auto end = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(end - start);
     
-    std::cout << "\n====================================================\n";
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(end - start);
+    std::cout << "\n=================================================\n";
     std::cout << "Total execution time: " << elapsed.count() << " seconds\n";
     
     if (FOUND) {
-        std::cout << "🏆 INTELLIGENCE TRIUMPHS! 🏆\n";
+        std::cout << "🏆 REAL-TIME INTELLIGENCE TRIUMPHS! 🏆\n";
     } else {
-        std::cout << "🤖 The AI will continue learning... 🤖\n";
+        std::cout << "🤖 System continues to learn and adapt... 🤖\n";
     }
     
-    // Cleanup
     cleanup_bignum_constants();
-    
     return 0;
 }

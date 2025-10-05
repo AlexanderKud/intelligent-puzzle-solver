@@ -1008,12 +1008,91 @@ void ultra_adaptive_evolutionary_solver() {
     std::cout << "\n🎉 SOLVED! Total keys: " << TOTAL_TRIED << " | Time: " << total_seconds << "s\n";
 }
 
+void verify_hash160_correctness() {
+    std::cout << "\n🔍 VERIFYING HASH160 GENERATION:\n";
+    
+    BIGNUM* test_key = BN_new();
+    BN_hex2bn(&test_key, "1"); // Private key 1
+    
+    std::string computed_hash = turbo_hash_bn(test_key);
+    std::string expected_hash = "751e76e8199196d454941c45d1b3a323f1433bd6";
+    
+    std::cout << "Private Key: 1\n";
+    std::cout << "Computed Hash: " << computed_hash << "\n";
+    std::cout << "Expected Hash: " << expected_hash << "\n";
+    std::cout << "Match: " << (computed_hash == expected_hash ? "✅ PASS" : "❌ FAIL") << "\n";
+    
+    std::cout << "\n🔍 TESTING COMPARISON LOGIC:\n";
+    std::string test_target = "751e76e8199196d454941c45d1b3a323f1433bd6";
+    
+    bool full_match = true;
+    int match_length = 0;
+    
+    for (size_t i = 0; i < computed_hash.size() && i < test_target.size(); i++) {
+        if (computed_hash[i] != test_target[i]) {
+            full_match = false;
+            match_length = i;
+            break;
+        }
+    }
+    
+    if (full_match) match_length = computed_hash.size();
+    
+    std::cout << "Full match: " << (full_match ? "YES" : "NO") << "\n";
+    std::cout << "Match length: " << match_length << " characters\n";
+    std::cout << "Expected: 40 characters (full match)\n";
+    
+    BN_free(test_key);
+}
+
+// VERIFICATION PROGRAM
+void standalone_verifier() {
+    std::cout << "🧪 HASH160 VERIFICATION TOOL\n";
+    
+    EC_KEY* kk = EC_KEY_new_by_curve_name(NID_secp256k1);
+    BIGNUM* key_bn = BN_new();
+    const EC_GROUP* g = EC_KEY_get0_group(kk);
+    EC_POINT* p = EC_POINT_new(g);
+    
+    // Test multiple keys
+    const char* test_keys[] = {
+        "1",
+        "2",
+        "ff"
+    };
+    
+    const char* expected_hashes[] = {
+        "751e76e8199196d454941c45d1b3a323f1433bd6",
+        "06afd46bcdfd22ef94ac122aa11f241244a37ecc",
+        "864cccbcbd47cf92a1d64fc67a1b505405757b29"
+    };
+    
+    for (int i = 0; i < 3; i++) {
+        BN_hex2bn(&key_bn, test_keys[i]);
+        std::string computed_hash = turbo_hash_bn(key_bn);
+        
+        std::cout << "\nTest " << (i+1) << ":\n";
+        std::cout << "Key: " << test_keys[i] << "\n";
+        std::cout << "Computed: " << computed_hash << "\n";
+        std::cout << "Expected: " << expected_hashes[i] << "\n";
+        std::cout << "Status: " << (computed_hash == expected_hashes[i] ? "✅ PASS" : "❌ FAIL") << "\n";
+    }
+    
+    EC_POINT_free(p);
+    BN_free(key_bn);
+    EC_KEY_free(kk);
+}
+
 int main() {
     std::cout << "🧠 ULTRA-ADAPTIVE BITCOIN PUZZLE SOLVER 🧠\n";
     std::cout << "=========================================\n\n";
     
     init_bignum_constants();
     GLOBAL_EVOLUTION.load_evolutionary_state();
+
+    // RUN VERIFICATION TESTS
+    verify_hash160_correctness();
+    standalone_verifier();
     
     ultra_adaptive_evolutionary_solver();
     

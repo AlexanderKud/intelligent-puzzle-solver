@@ -19,7 +19,7 @@
 #include <openssl/bn.h>
 
 // 🧠 ULTRA-ADAPTIVE EVOLUTIONARY BITCOIN PUZZLE SOLVER
-constexpr int N_THREADS = 16;
+int N_THREADS = std::thread::hardware_concurrency();
 
 std::atomic<bool> FOUND(false);
 std::mutex intelligence_mutex;

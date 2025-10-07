@@ -10,4 +10,4 @@ cmake ..
 make -j$(nproc)
 
 # Run 
-./intelligent_solver
+./safe_benchmark

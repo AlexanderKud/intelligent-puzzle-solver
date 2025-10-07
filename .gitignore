@@ -22,3 +22,5 @@ rad.json
 TestResults.xml
 # The build dir..
 build
+
+secp256k1
